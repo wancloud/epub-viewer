@@ -141,9 +141,16 @@ jobs:
         run: |
           mkdir -p "$HOME/.buildozer/android/platform"
           ln -s "$ANDROID_SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
-          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager | head -1)
-          mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
-          ln -s "$SDKMANAGER" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+          # This runner's pre-baked SDK image turned out to already have a legacy
+          # tools/bin/sdkmanager (that's specifically why the *previous* run's error
+          # was "does not exist" -- it was pointed at my then-empty placeholder
+          # directory, not the real SDK). Only create the compatibility shim if it's
+          # genuinely missing, for portability to runner images that lack it.
+          if [ ! -e "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
+            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager | head -1)
+            mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
+            ln -s "$SDKMANAGER" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+          fi
 
       - name: Build Android APK
         run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
