@@ -50,11 +50,14 @@ jobs:
       - name: Create virtual environment
         run: |
           python -m venv .venv-android
-          # Adding the venv's bin dir to GITHUB_PATH makes every later step in this job
-          # resolve python/pip/pyside6-android-deploy to the venv automatically, without
-          # needing to `source activate` in each step (activation doesn't persist across
-          # separate `run:` blocks, each of which is its own shell invocation).
+          # `source activate` normally does two things: prepend the venv's bin dir to
+          # PATH, and export VIRTUAL_ENV. Adding just the bin dir to GITHUB_PATH (as
+          # below) makes python/pip resolve into the venv, but pyside6-android-deploy's
+          # own venv check reads the VIRTUAL_ENV env var specifically -- without also
+          # exporting that via GITHUB_ENV, it still thinks it isn't in a venv and tries
+          # to prompt for confirmation, which crashes in CI (no stdin to answer it).
           echo "$(pwd)/.venv-android/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$(pwd)/.venv-android" >> "$GITHUB_ENV"
 
       - name: Install PySide6 deploy tooling
         run: |
