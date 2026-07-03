@@ -174,12 +174,16 @@ jobs:
 
       # python-for-android strips native libs only for RELEASE builds; our debug APK
       # ships every Qt/Python/shiboken .so with full symbol tables, which is the bulk of
-      # the ~700MB. Strip them post-build with the NDK's llvm-strip. Stripping
-      # invalidates the APK signature, so re-align and re-sign afterwards. Two modern
-      # packaging requirements are handled explicitly: resources.arsc and *.so must be
-      # STORED uncompressed (zip -0) and page-aligned (zipalign -p) or the APK won't
-      # install on Android 11+ (targetSdk>=30). apksigner verify at the end makes a
-      # botched re-sign fail loudly rather than yield a silently-uninstallable APK.
+      # the ~700MB. Strip them post-build with the NDK's llvm-strip, then re-align and
+      # re-sign (stripping invalidates the signature).
+      #
+      # The rewrite PRESERVES each zip entry's original compression type via Python's
+      # zipfile. An earlier attempt stored .so uncompressed (zip -0) "for alignment",
+      # which actually INFLATED the APK (679M -> 781M): stripped-but-uncompressed .so are
+      # larger than the original compressed-unstripped ones. Preserving compress_type
+      # means stripped .so stay compressed (the real size win) and resources.arsc keeps
+      # exactly the packaging buildozer chose (no targetSdk>=30 install breakage to guess
+      # about). apksigner verify makes a botched re-sign fail loudly.
       - name: Strip native libraries to shrink the APK
         run: |
           set -euo pipefail
@@ -187,32 +191,39 @@ jobs:
           echo "Original APK size: $(du -h "$APK" | cut -f1)"
           STRIP=$(find "$NDK_PATH/toolchains/llvm/prebuilt" -name llvm-strip | head -1)
           BUILD_TOOLS=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
-
-          WORK=$(mktemp -d)
-          unzip -q "$APK" -d "$WORK"
-          # NOT every lib/**/*.so is an ELF object: python-for-android ships the Python
-          # stdlib as libpybundle.so (a .so name is how it rides along in the APK's lib
-          # dir and gets extracted). llvm-strip errors on such non-ELF files, so gate on
-          # the ELF magic (7f 45 4c 46) -- strip real shared objects, skip the bundles.
-          # A genuine strip failure on an ELF file still aborts the step (set -e).
-          while IFS= read -r -d '' so; do
-            if [ "$(head -c4 "$so" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ]; then
-              "$STRIP" --strip-unneeded "$so"
-            else
-              echo "  skipping non-ELF: ${so#"$WORK"/}"
-            fi
-          done < <(find "$WORK" -name "*.so" -print0)
-          rm -rf "$WORK/META-INF"   # drop now-invalid signature
-
           UNSIGNED=$(mktemp -u --suffix=.apk)
-          ( cd "$WORK"
-            # entries Android mmaps directly must be stored uncompressed...
-            find . \( -name "*.so" -o -name "resources.arsc" \) -print \
-              | sed 's|^\./||' | zip -q -X -0 "$UNSIGNED" -@
-            # ...everything else can be compressed
-            zip -qr -X "$UNSIGNED" . -x "*.so" -x resources.arsc )
+
+          STRIP="$STRIP" python3 - "$APK" "$UNSIGNED" <<'PY'
+          import os, subprocess, sys, tempfile, zipfile
+          src, dst = sys.argv[1], sys.argv[2]
+          strip = os.environ["STRIP"]
+          zin = zipfile.ZipFile(src)
+          zout = zipfile.ZipFile(dst, "w")
+          for item in zin.infolist():
+              if item.filename.startswith("META-INF/"):
+                  continue  # drop the now-invalid signature; apksigner re-adds it
+              data = zin.read(item.filename)
+              # Only real ELF shared objects can be stripped. p4a ships the Python stdlib
+              # as libpybundle.so (a .so name so it lands in lib/ and gets extracted) --
+              # not an ELF, so llvm-strip would error; the magic-byte check skips it.
+              if item.filename.endswith(".so") and data[:4] == b"\x7fELF":
+                  with tempfile.NamedTemporaryFile(suffix=".so", delete=False) as tf:
+                      tf.write(data); tmp = tf.name
+                  subprocess.run([strip, "--strip-unneeded", tmp], check=True)
+                  with open(tmp, "rb") as f:
+                      data = f.read()
+                  os.unlink(tmp)
+              # Preserve the entry's ORIGINAL compression type verbatim.
+              zi = zipfile.ZipInfo(item.filename, date_time=item.date_time)
+              zi.compress_type = item.compress_type
+              zi.external_attr = item.external_attr
+              zi.internal_attr = item.internal_attr
+              zout.writestr(zi, data)
+          zout.close(); zin.close()
+          PY
 
           ALIGNED=$(mktemp -u --suffix=.apk)
+          # -p page-aligns any uncompressed .so; harmless for compressed ones.
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
 
           # Any debug key is fine for a sideloadable debug APK; mint the standard one.
