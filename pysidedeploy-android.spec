@@ -1,6 +1,12 @@
-# Android build config for EpubViewer, used by PySide6's `pyside6-android-deploy` tool.
+[app]
+
+# NOTE: PySide6's own spec parser is configured with comment_prefixes="/", not "#" --
+# a "#" line is only silently tolerated (as a harmless no-value key, since
+# allow_no_value=True) *inside* a section; before the first [section] header it breaks
+# parsing entirely (MissingSectionHeaderError). So this explanation lives here, inside
+# [app], rather than above it.
 #
-# IMPORTANT — this is a config *scaffold*, not a ready-to-run build:
+# This is a config *scaffold*, not a ready-to-run build:
 #
 # 1. `pyside6-android-deploy` wraps buildozer/python-for-android, which only runs on a
 #    Linux (or macOS) host. It is NOT supported from native Windows -- run it from WSL2,
@@ -21,8 +27,6 @@
 # Touch navigation (tap zones + swipe) was added to the reader for this target; menu-bar
 # actions (Open/Change Chapter/Viewer Settings) still work via Qt's Android widget rendering,
 # but QFileDialog's native picker behavior on Android should be spot-checked on a device.
-
-[app]
 
 # Title of your application
 title = EpubViewer
