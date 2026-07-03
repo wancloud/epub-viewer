@@ -119,22 +119,31 @@ jobs:
           echo "NDK_PATH=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
           ls "$(pwd)/android-ndk-r27c" | head -5
 
-      # The previous run actually FAILED here (buildozer's "android debug" subprocess
-      # exited non-zero because Android SDK Build-Tools 37's license wasn't accepted,
-      # so `aidl` was missing) -- but pyside6-android-deploy printed the traceback and
-      # still let the shell step exit 0, so the job showed green with no APK produced.
-      # This action installs its own SDK copy with licenses pre-accepted; the real fix
-      # is the next step, which seeds buildozer's *own* separate SDK directory
-      # (~/.buildozer/android/platform/android-sdk, confirmed from the earlier failure
-      # log -- not the same location this action installs to) with those same accepted
-      # license records, since license acceptance is just files on disk per SDK root.
+      # A previous run FAILED here (buildozer's "android debug" subprocess exited
+      # non-zero because Android SDK Build-Tools 37's license wasn't accepted, so `aidl`
+      # was missing) -- but pyside6-android-deploy printed the traceback and still let
+      # the shell step exit 0, so the job showed green with no APK produced. This action
+      # installs a real SDK with licenses pre-accepted.
       - name: Set up Android SDK (for accepted licenses)
         uses: android-actions/setup-android@v4
 
-      - name: Pre-accept Android SDK licenses for buildozer's SDK directory
+      # Point buildozer's own expected SDK directory (~/.buildozer/android/platform/
+      # android-sdk, confirmed from the earlier failure log) at the real installed SDK,
+      # instead of letting buildozer manage its own separate, initially-empty copy.
+      # Just seeding that directory with copied license files (an earlier attempt) got
+      # further but still failed: python-for-android's `develop` branch (which buildozer
+      # clones fresh every run) checks for the *legacy* SDK Tools layout
+      # (tools/bin/sdkmanager), which Google discontinued years ago in favor of
+      # cmdline-tools/*/bin/sdkmanager -- what setup-android actually installs. Symlink
+      # the real SDK into buildozer's expected path, then add a compatibility symlink
+      # for the legacy path p4a still looks for.
+      - name: Point buildozer at the real Android SDK
         run: |
-          mkdir -p "$HOME/.buildozer/android/platform/android-sdk/licenses"
-          cp "$ANDROID_SDK_ROOT/licenses/"* "$HOME/.buildozer/android/platform/android-sdk/licenses/"
+          mkdir -p "$HOME/.buildozer/android/platform"
+          ln -s "$ANDROID_SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager | head -1)
+          mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
+          ln -s "$SDKMANAGER" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
 
       - name: Build Android APK
         run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
