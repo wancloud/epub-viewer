@@ -85,8 +85,29 @@ jobs:
             https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-6.11.1-6.11.1-cp311-cp311-android_aarch64.whl
           ls -la android-wheels/
 
+      # Read PySide6's own deploy_lib/android/android_config.py source to find this:
+      # AndroidConfig.__init__ only auto-downloads/looks up ndk_path from the spec file
+      # when `existing_config_file` is False -- i.e. only for a spec freshly generated
+      # by --init, never for a pre-existing spec file like ours (`elif not
+      # existing_config_file:` guards that whole branch). Leaving [buildozer] ndk_path
+      # blank in the spec, as its own comment suggests, actually leaves self.ndk_path as
+      # None permanently for us, crashing later with "TypeError: unsupported operand
+      # type(s) for /: 'NoneType' and 'str'" when it tries to locate llvm-readobj.
+      # Fix: download the NDK version PySide6 actually needs (r27c, from
+      # android_utilities.ANDROID_NDK_VERSION) using PySide6's own downloader, and pass
+      # it explicitly via --ndk-path, which android_config.py checks *before* the buggy
+      # existing_config_file branch.
+      - name: Download Android NDK
+        run: |
+          NDK_PATH=$(python -c "
+          from PySide6.scripts.deploy_lib.android.android_utilities import download_android_ndk, ANDROID_DEPLOY_CACHE
+          print(download_android_ndk(ANDROID_DEPLOY_CACHE))
+          " | tail -1)
+          echo "Resolved NDK path: $NDK_PATH"
+          echo "NDK_PATH=$NDK_PATH" >> "$GITHUB_ENV"
+
       - name: Build Android APK
-        run: pyside6-android-deploy -c pysidedeploy-android.spec
+        run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
 
       - name: Upload Android build artifact
         uses: actions/upload-artifact@v7
