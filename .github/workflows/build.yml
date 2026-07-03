@@ -7,6 +7,10 @@ on:
 
 jobs:
   build-windows:
+    # Temporarily disabled while iterating on the Android build -- it already builds
+    # successfully, no need to keep re-running it on every push. Remove this line (or
+    # flip to true) once the Android job is stable.
+    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -97,14 +101,23 @@ jobs:
       # android_utilities.ANDROID_NDK_VERSION) using PySide6's own downloader, and pass
       # it explicitly via --ndk-path, which android_config.py checks *before* the buggy
       # existing_config_file branch.
+      #
+      # Originally tried calling PySide6's own download_android_ndk() helper via
+      # `python -c "from PySide6.scripts.deploy_lib.android.android_utilities import
+      # ..."`, but that import chain hits the exact same `ModuleNotFoundError: No
+      # module named 'project_lib'` bug seen earlier on Windows (deploy_lib/__init__.py
+      # unconditionally imports nuitka_helper, which imports the internal-only
+      # project_lib) -- it failed silently in that step (error went to stderr, which the
+      # `| tail -1` capture ignored), leaving NDK_PATH empty and producing a bogus
+      # relative path in the next step. Downloading the NDK directly from Google's own
+      # well-known URL sidesteps that PySide6 import entirely.
       - name: Download Android NDK
         run: |
-          NDK_PATH=$(python -c "
-          from PySide6.scripts.deploy_lib.android.android_utilities import download_android_ndk, ANDROID_DEPLOY_CACHE
-          print(download_android_ndk(ANDROID_DEPLOY_CACHE))
-          " | tail -1)
-          echo "Resolved NDK path: $NDK_PATH"
-          echo "NDK_PATH=$NDK_PATH" >> "$GITHUB_ENV"
+          curl -fL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
+          unzip -q ndk.zip
+          rm ndk.zip
+          echo "NDK_PATH=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
+          ls "$(pwd)/android-ndk-r27c" | head -5
 
       - name: Build Android APK
         run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
