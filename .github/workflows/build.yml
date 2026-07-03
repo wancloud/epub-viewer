@@ -141,16 +141,21 @@ jobs:
         run: |
           mkdir -p "$HOME/.buildozer/android/platform"
           ln -s "$ANDROID_SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
-          # This runner's pre-baked SDK image turned out to already have a legacy
-          # tools/bin/sdkmanager (that's specifically why the *previous* run's error
-          # was "does not exist" -- it was pointed at my then-empty placeholder
-          # directory, not the real SDK). Only create the compatibility shim if it's
-          # genuinely missing, for portability to runner images that lack it.
-          if [ ! -e "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
-            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager | head -1)
-            mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
-            ln -s "$SDKMANAGER" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
-          fi
+          # python-for-android invokes the legacy Android SDK Tools path
+          # tools/bin/sdkmanager. The runner image ships that legacy binary, but it
+          # depends on JAXB (javax.xml.bind), which was REMOVED from the JDK in Java 11+
+          # -- so under our JDK 17 it dies with
+          # "NoClassDefFoundError: javax/xml/bind/annotation/XmlSchema" and the build
+          # aborts before it can install platform-tools. Force-replace that legacy
+          # binary with the modern cmdline-tools sdkmanager (JDK-17 compatible, same CLI:
+          # --sdk_root + package names). Its launcher resolves symlinks to find its own
+          # lib/ dir, so a symlink at the legacy path works. `ln -sf` overwrites the
+          # existing broken binary (this is the corrected version of an earlier fix that
+          # wrongly *skipped* replacement when the legacy binary was present).
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager | head -1)
+          mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
+          ln -sf "$SDKMANAGER" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+          echo "Legacy sdkmanager now points to: $(readlink -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager")"
 
       - name: Build Android APK
         run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
