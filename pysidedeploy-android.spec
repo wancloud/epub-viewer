@@ -73,11 +73,15 @@ plugins =
 
 [android]
 
-# Path to the Android-targeted PySide6 wheel (NOT the desktop wheel from requirements.txt)
-wheel_pyside =
+# Paths (relative to project_dir) to the Android-targeted PySide6/shiboken6 wheels --
+# NOT the desktop wheels from requirements.txt. Downloaded by the CI workflow from
+# download.qt.io (PyPI only carries desktop wheels) to these exact relative paths;
+# if building locally, download the matching version yourself to the same location.
+# Keep these in sync with the pyside6 version pinned in .github/workflows/build.yml.
+wheel_pyside = android-wheels/pyside6-android_aarch64.whl
 
 # Path to the Android-targeted Shiboken wheel
-wheel_shiboken =
+wheel_shiboken = android-wheels/shiboken6-android_aarch64.whl
 
 # Plugins to be copied to libs folder of the packaged application. Comma separated
 plugins =

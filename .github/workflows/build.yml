@@ -62,22 +62,28 @@ jobs:
       - name: Install PySide6 deploy tooling
         run: |
           python -m pip install --upgrade pip
-          pip install pyside6 buildozer cython
+          # Pinned to match the Android wheel version downloaded below -- if you bump
+          # this, bump the wheel filenames/URLs in the next step (and in
+          # pysidedeploy-android.spec's [android] section) to the same version.
+          pip install pyside6==6.11.1 buildozer cython
           # pyside6-android-deploy needs these but doesn't install them itself; the
           # exact list ships with PySide6 (PySide6/scripts/requirements-android.txt),
           # so install from that file rather than hardcoding package names here.
           pip install -r "$(python -c 'import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
 
-      # TODO (unverified): this step needs the Android-cross-compiled PySide6/shiboken6
-      # wheels for the PySide6 version installed above, downloaded to a local path and
-      # referenced from pysidedeploy-android.spec's [android] wheel_pyside/wheel_shiboken
-      # fields (or passed as CLI overrides here). See
-      # https://doc.qt.io/qtforpython/deployment/deploy-android.html for the current
-      # official source -- this is the one part of this workflow not yet confirmed to
-      # work end-to-end; expect to adjust this step based on the first run's real output.
+      # Verified: there is no auto-download for these (confirmed by reading PySide6's
+      # own deploy_lib/android/android_config.py source) -- they must be fetched
+      # manually. Qt publishes them at download.qt.io rather than PyPI (PyPI only has
+      # desktop wheels), under the plain (non "-src") entries of the pyside6/shiboken6
+      # release trees. Verified these exact URLs 200 OK before wiring them in here.
       - name: Download Android PySide6/Shiboken wheels
         run: |
-          echo "TODO: fetch Android-targeted PySide6 + shiboken6 wheels here"
+          mkdir -p android-wheels
+          curl -fL -o android-wheels/pyside6-android_aarch64.whl \
+            https://download.qt.io/official_releases/QtForPython/pyside6/pyside6-6.11.1-6.11.1-cp311-cp311-android_aarch64.whl
+          curl -fL -o android-wheels/shiboken6-android_aarch64.whl \
+            https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-6.11.1-6.11.1-cp311-cp311-android_aarch64.whl
+          ls -la android-wheels/
 
       - name: Build Android APK
         run: pyside6-android-deploy -c pysidedeploy-android.spec
