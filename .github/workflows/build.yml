@@ -172,6 +172,53 @@ jobs:
       - name: Build Android APK
         run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
 
+      # python-for-android strips native libs only for RELEASE builds; our debug APK
+      # ships every Qt/Python/shiboken .so with full symbol tables, which is the bulk of
+      # the ~700MB. Strip them post-build with the NDK's llvm-strip. Stripping
+      # invalidates the APK signature, so re-align and re-sign afterwards. Two modern
+      # packaging requirements are handled explicitly: resources.arsc and *.so must be
+      # STORED uncompressed (zip -0) and page-aligned (zipalign -p) or the APK won't
+      # install on Android 11+ (targetSdk>=30). apksigner verify at the end makes a
+      # botched re-sign fail loudly rather than yield a silently-uninstallable APK.
+      - name: Strip native libraries to shrink the APK
+        run: |
+          set -euo pipefail
+          APK=$(find dist-android -name "*.apk" | head -1)
+          echo "Original APK size: $(du -h "$APK" | cut -f1)"
+          STRIP=$(find "$NDK_PATH/toolchains/llvm/prebuilt" -name llvm-strip | head -1)
+          BUILD_TOOLS=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+
+          WORK=$(mktemp -d)
+          unzip -q "$APK" -d "$WORK"
+          find "$WORK" -name "*.so" -exec "$STRIP" --strip-unneeded {} +
+          rm -rf "$WORK/META-INF"   # drop now-invalid signature
+
+          UNSIGNED=$(mktemp -u --suffix=.apk)
+          ( cd "$WORK"
+            # entries Android mmaps directly must be stored uncompressed...
+            find . \( -name "*.so" -o -name "resources.arsc" \) -print \
+              | sed 's|^\./||' | zip -q -X -0 "$UNSIGNED" -@
+            # ...everything else can be compressed
+            zip -qr -X "$UNSIGNED" . -x "*.so" -x resources.arsc )
+
+          ALIGNED=$(mktemp -u --suffix=.apk)
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+
+          # Any debug key is fine for a sideloadable debug APK; mint the standard one.
+          KS="$HOME/.android/debug.keystore"
+          if [ ! -f "$KS" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
+              -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          "$BUILD_TOOLS/apksigner" sign --ks "$KS" --ks-pass pass:android \
+            --key-pass pass:android --ks-key-alias androiddebugkey "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" verify "$ALIGNED"
+
+          mv -f "$ALIGNED" "$APK"
+          echo "Stripped + re-signed APK size: $(du -h "$APK" | cut -f1)"
+
       # pyside6-android-deploy does not reliably propagate a failing buildozer
       # subprocess as a non-zero exit code (see above) -- verify a real APK exists
       # rather than trusting the previous step's own exit status.
