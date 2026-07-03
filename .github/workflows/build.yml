@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows executable
+        run: >
+          pyinstaller --noconfirm --windowed --name EpubViewer
+          --add-data "epubviewer/resources;epubviewer/resources" main.py
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EpubViewer-windows
+          path: dist/EpubViewer/
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install PySide6 deploy tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyside6 buildozer cython
+
+      # TODO (unverified): this step needs the Android-cross-compiled PySide6/shiboken6
+      # wheels for the PySide6 version installed above, downloaded to a local path and
+      # referenced from pysidedeploy-android.spec's [android] wheel_pyside/wheel_shiboken
+      # fields (or passed as CLI overrides here). See
+      # https://doc.qt.io/qtforpython/deployment/deploy-android.html for the current
+      # official source -- this is the one part of this workflow not yet confirmed to
+      # work end-to-end; expect to adjust this step based on the first run's real output.
+      - name: Download Android PySide6/Shiboken wheels
+        run: |
+          echo "TODO: fetch Android-targeted PySide6 + shiboken6 wheels here"
+
+      - name: Build Android APK
+        run: pyside6-android-deploy -c pysidedeploy-android.spec
+
+      - name: Upload Android build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EpubViewer-android
+          path: dist-android/**/*.apk
