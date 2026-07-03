@@ -51,6 +51,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyside6 buildozer cython
+          # pyside6-android-deploy needs these but doesn't install them itself; the
+          # exact list ships with PySide6 (PySide6/scripts/requirements-android.txt),
+          # so install from that file rather than hardcoding package names here.
+          pip install -r "$(python -c 'import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
 
       # TODO (unverified): this step needs the Android-cross-compiled PySide6/shiboken6
       # wheels for the PySide6 version installed above, downloaded to a local path and
