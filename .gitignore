@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyInstaller build artifacts (EpubViewer.spec is kept tracked for reproducible builds)
+build/
+dist/
+
+# Local settings (not meant to be shared/tracked)
+.claude/settings.local.json

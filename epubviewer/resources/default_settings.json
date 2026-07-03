@@ -1,0 +1,19 @@
+{
+    "font_family": "Yu Gothic",
+    "font_size": 14,
+    "text_color": "#1a1a1a",
+    "background_color": "#ffffff",
+    "theme_name": "Light",
+    "ui_font_size": 9,
+    "content_padding": 20,
+    "dialogue_config": {
+        "pairs": [
+            {"open": "「", "close": "」", "color": "#1a5fb4", "enabled": true},
+            {"open": "\"", "close": "\"", "color": "#1a5fb4", "enabled": true},
+            {"open": "'", "close": "'", "color": "#1a5fb4", "enabled": false},
+            {"open": "«", "close": "»", "color": "#1a5fb4", "enabled": false}
+        ]
+    },
+    "recent_books": [],
+    "window_geometry": null
+}
