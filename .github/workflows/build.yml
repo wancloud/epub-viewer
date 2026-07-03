@@ -47,6 +47,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv-android
+          # Adding the venv's bin dir to GITHUB_PATH makes every later step in this job
+          # resolve python/pip/pyside6-android-deploy to the venv automatically, without
+          # needing to `source activate` in each step (activation doesn't persist across
+          # separate `run:` blocks, each of which is its own shell invocation).
+          echo "$(pwd)/.venv-android/bin" >> "$GITHUB_PATH"
+
       - name: Install PySide6 deploy tooling
         run: |
           python -m pip install --upgrade pip
