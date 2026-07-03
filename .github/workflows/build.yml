@@ -51,6 +51,18 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # python-for-android builds several native C deps from source (libffi, openssl,
+      # etc.). libffi's recipe runs autoreconf, whose configure.ac uses the libtool m4
+      # macro LT_SYS_SYMBOL_USCORE -- without the `libtool` package installed, that
+      # macro is undefined and autoreconf dies with "possibly undefined macro:
+      # LT_SYS_SYMBOL_USCORE". These are p4a's documented host build requirements.
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libtool libtool-bin autoconf automake pkg-config \
+            build-essential libltdl-dev zlib1g-dev
+
       - name: Create virtual environment
         run: |
           python -m venv .venv-android
