@@ -38,7 +38,9 @@ dependencies:
   epubx: ^4.0.0              # pure-Dart EPUB parsing (all platforms incl. Windows)
   html: ^0.15.4             # pure-Dart HTML DOM walking for content rendering
   shared_preferences: ^2.3.2 # cross-platform key/value persistence (settings, recents)
-  file_picker: ^11.0.2        # native "Open EPUB" file dialog on desktop + mobile
+  file_picker: 8.3.7          # native "Open EPUB" file dialog; pinned to 8.x (Java plugin,
+                              # no Kotlin/KGP) — 11.x ships a Kotlin plugin class that
+                              # GeneratedPluginRegistrant.java can't resolve on Android
   window_manager: ^0.4.3     # desktop window size persistence
 
 dev_dependencies:

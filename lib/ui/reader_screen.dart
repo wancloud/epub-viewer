@@ -91,7 +91,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   // ---- opening books ----
 
   Future<void> _openFileDialog() async {
-    final result = await FilePicker.pickFiles(
+    final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['epub'],
       withData: true,
