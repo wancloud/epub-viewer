@@ -38,6 +38,7 @@ const _swatches = [
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _fontFamilyController;
   late int _fontSize;
+  late int _paragraphSpacing;
   late int _uiFontSize;
   late int _contentPadding;
   late String _themeName;
@@ -51,6 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final s = widget.settings;
     _fontFamilyController = TextEditingController(text: s.fontFamily);
     _fontSize = s.fontSize;
+    _paragraphSpacing = s.paragraphSpacing;
     _uiFontSize = s.uiFontSize;
     _contentPadding = s.contentPadding;
     _themeName = kThemes.containsKey(s.themeName) ? s.themeName : 'Custom';
@@ -145,6 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final family = _fontFamilyController.text.trim();
     s.fontFamily = family.isEmpty ? s.fontFamily : family;
     s.fontSize = _fontSize;
+    s.paragraphSpacing = _paragraphSpacing;
     s.uiFontSize = _uiFontSize;
     s.contentPadding = _contentPadding;
     s.themeName = _themeName;
@@ -193,6 +196,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
           _stepperRow('Size', _fontSize, 8, 48, (v) => setState(() => _fontSize = v)),
+          _stepperRow('Paragraph spacing (px)', _paragraphSpacing, 0, 80,
+              (v) => setState(() => _paragraphSpacing = v), step: 2),
           _stepperRow('UI font size', _uiFontSize, 7, 24, (v) => setState(() => _uiFontSize = v)),
           _stepperRow('Content padding (px)', _contentPadding, 0, 200,
               (v) => setState(() => _contentPadding = v), step: 4),

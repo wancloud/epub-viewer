@@ -168,6 +168,7 @@ class _ReaderViewState extends State<ReaderView> {
       color: hexToColor(s.textColor),
       height: 1.5,
     );
+    final paraGap = s.paragraphSpacing.toDouble();
     final widgets = <Widget>[];
     for (final block in widget.blocks) {
       switch (block.kind) {
@@ -194,7 +195,7 @@ class _ReaderViewState extends State<ReaderView> {
           break;
         case BlockKind.paragraph:
           widgets.add(Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.only(bottom: paraGap),
             child: Text.rich(_spanFor(block.runs, base)),
           ));
           break;

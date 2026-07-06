@@ -57,6 +57,7 @@ class RecentBook {
 class AppSettings {
   String fontFamily;
   int fontSize;
+  int paragraphSpacing; // vertical gap (px) between paragraphs in the content area
   String textColor;
   String backgroundColor;
   String themeName;
@@ -70,6 +71,7 @@ class AppSettings {
   AppSettings({
     this.fontFamily = 'Yu Gothic',
     this.fontSize = 14,
+    this.paragraphSpacing = 12,
     this.textColor = '#1a1a1a',
     this.backgroundColor = '#ffffff',
     this.themeName = 'Light',
@@ -119,6 +121,7 @@ class AppSettings {
   Map<String, dynamic> toJson() => {
         'font_family': fontFamily,
         'font_size': fontSize,
+        'paragraph_spacing': paragraphSpacing,
         'text_color': textColor,
         'background_color': backgroundColor,
         'theme_name': themeName,
@@ -135,6 +138,7 @@ class AppSettings {
     return AppSettings(
       fontFamily: d['font_family'] as String? ?? defaults.fontFamily,
       fontSize: d['font_size'] as int? ?? defaults.fontSize,
+      paragraphSpacing: d['paragraph_spacing'] as int? ?? defaults.paragraphSpacing,
       textColor: d['text_color'] as String? ?? defaults.textColor,
       backgroundColor: d['background_color'] as String? ?? defaults.backgroundColor,
       themeName: d['theme_name'] as String? ?? defaults.themeName,
