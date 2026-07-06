@@ -23,8 +23,11 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+// Quick-pick suggestions only — the family is a free-text field, so any font the OS has
+// (e.g. "Noto Sans TC") can be typed in even if it isn't listed here.
 const _fontFamilies = [
-  'Yu Gothic', 'Noto Sans', 'Noto Serif', 'Roboto', 'Serif', 'Sans Serif', 'Monospace',
+  'Yu Gothic', 'Noto Sans', 'Noto Serif', 'Noto Sans TC', 'Noto Sans SC',
+  'Noto Serif TC', 'Microsoft JhengHei', 'Roboto', 'Serif', 'Sans Serif', 'Monospace',
 ];
 
 const _swatches = [
@@ -33,7 +36,7 @@ const _swatches = [
 ];
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late String _fontFamily;
+  late final TextEditingController _fontFamilyController;
   late int _fontSize;
   late int _uiFontSize;
   late int _contentPadding;
@@ -46,7 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     final s = widget.settings;
-    _fontFamily = _fontFamilies.contains(s.fontFamily) ? s.fontFamily : _fontFamilies.first;
+    _fontFamilyController = TextEditingController(text: s.fontFamily);
     _fontSize = s.fontSize;
     _uiFontSize = s.uiFontSize;
     _contentPadding = s.contentPadding;
@@ -58,37 +61,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .toList(); // shallow copies (QuotePair is immutable)
   }
 
+  @override
+  void dispose() {
+    _fontFamilyController.dispose();
+    super.dispose();
+  }
+
   Future<String?> _pickColor(String current) {
+    final customController = TextEditingController(text: current);
     return showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Choose color'),
-        content: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final hex in _swatches)
-              InkWell(
-                onTap: () => Navigator.of(context).pop(hex),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: hexToColor(hex),
-                    border: Border.all(
-                        color: hex == current ? Colors.blue : Colors.grey, width: hex == current ? 3 : 1),
-                  ),
-                ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final hex in _swatches)
+                    InkWell(
+                      onTap: () => Navigator.of(ctx).pop(hex),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: hexToColor(hex),
+                          border: Border.all(
+                              color: hex == current ? Colors.blue : Colors.grey,
+                              width: hex == current ? 3 : 1),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
+              const SizedBox(height: 16),
+              const Text('Custom hex:'),
+              const SizedBox(height: 4),
+              TextField(
+                controller: customController,
+                autofocus: false,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  hintText: '#e18a24',
+                ),
+                onSubmitted: (v) {
+                  final hex = normalizeHexColor(v);
+                  if (hex != null) Navigator.of(ctx).pop(hex);
+                },
+              ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final hex = normalizeHexColor(customController.text);
+              if (hex != null) {
+                Navigator.of(ctx).pop(hex);
+              } else {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Enter a valid hex color like #e18a24')),
+                );
+              }
+            },
+            child: const Text('Use custom'),
+          ),
+        ],
       ),
     );
   }
 
   AppSettings _collect() {
     final s = widget.settings;
-    s.fontFamily = _fontFamily;
+    final family = _fontFamilyController.text.trim();
+    s.fontFamily = family.isEmpty ? s.fontFamily : family;
     s.fontSize = _fontSize;
     s.uiFontSize = _uiFontSize;
     s.contentPadding = _contentPadding;
@@ -120,12 +175,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Text('Family:'),
             const SizedBox(width: 8),
             Expanded(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                value: _fontFamily,
-                items: [for (final f in _fontFamilies) DropdownMenuItem(value: f, child: Text(f))],
-                onChanged: (v) => setState(() => _fontFamily = v!),
+              child: TextField(
+                controller: _fontFamilyController,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  hintText: 'e.g. Noto Sans TC',
+                ),
               ),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.arrow_drop_down),
+              tooltip: 'Common fonts',
+              itemBuilder: (_) =>
+                  [for (final f in _fontFamilies) PopupMenuItem(value: f, child: Text(f))],
+              onSelected: (v) => _fontFamilyController.text = v,
             ),
           ]),
           _stepperRow('Size', _fontSize, 8, 48, (v) => setState(() => _fontSize = v)),
@@ -221,17 +285,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _pairRow(int i) {
     final p = _pairs[i];
+    // NB: the onChanged callbacks read _pairs[i] fresh (not the captured `p`). The Open and
+    // Close fields don't trigger a rebuild, so a captured `p` would be stale — editing Close
+    // after Open would copyWith off the pre-Open value and silently drop the Open marker.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
-        _markerField(p.open, (v) => _pairs[i] = p.copyWith(open: v), 'Open'),
+        _markerField(p.open, (v) => _pairs[i] = _pairs[i].copyWith(open: v), 'Open'),
         const SizedBox(width: 8),
-        _markerField(p.close, (v) => _pairs[i] = p.copyWith(close: v), 'Close'),
+        _markerField(p.close, (v) => _pairs[i] = _pairs[i].copyWith(close: v), 'Close'),
         const SizedBox(width: 8),
         InkWell(
           onTap: () async {
-            final picked = await _pickColor(p.color);
-            if (picked != null) setState(() => _pairs[i] = p.copyWith(color: picked));
+            final picked = await _pickColor(_pairs[i].color);
+            if (picked != null) setState(() => _pairs[i] = _pairs[i].copyWith(color: picked));
           },
           child: Container(
             width: 28,
@@ -242,7 +309,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         Switch(
           value: p.enabled,
-          onChanged: (v) => setState(() => _pairs[i] = p.copyWith(enabled: v)),
+          onChanged: (v) => setState(() => _pairs[i] = _pairs[i].copyWith(enabled: v)),
         ),
         IconButton(
           icon: const Icon(Icons.delete_outline),

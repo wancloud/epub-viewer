@@ -25,7 +25,11 @@ bool get _isDesktop =>
 /// status bar. Port of `epubviewer/ui/main_window.py` (see backup/pyside6/).
 class ReaderScreen extends StatefulWidget {
   final AppSettings settings;
-  const ReaderScreen({super.key, required this.settings});
+
+  /// Called after [settings] change so the host can re-derive the app theme.
+  final VoidCallback? onSettingsChanged;
+
+  const ReaderScreen({super.key, required this.settings, this.onSettingsChanged});
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -46,6 +50,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   bool _goToLastPageAfterMeasure = false;
   int? _pendingDirection;
   Timer? _confirmTimer;
+
+  // Per-book cache of whether a chapter renders any content, so navigation can skip
+  // empty spine entries (covers, blank separators). Emptiness is structural, so it stays
+  // valid regardless of dialogue-color/theme changes.
+  final Map<int, bool> _chapterHasContentCache = {};
 
   @override
   void initState() {
@@ -132,6 +141,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       return;
     }
     _book = book;
+    _chapterHasContentCache.clear();
     final ci = chapterIndex.clamp(0, book.chapters.length - 1);
     _settings.recordBookOpened(path, book.title,
         chapterIndex: ci, charOffset: charOffset);
@@ -224,9 +234,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _goToPage(_pageIndex + 1);
       return;
     }
+    final next = _adjacentContentChapter(1);
+    if (next == null) {
+      _cancelPending(); // no further readable chapter — nothing to arm
+      return;
+    }
     if (_pendingDirection == 1) {
       _cancelPending();
-      if (_chapterIndex + 1 < _book!.chapters.length) _loadChapter(_chapterIndex + 1);
+      _loadChapter(next);
       return;
     }
     _armPending(1);
@@ -238,9 +253,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _goToPage(_pageIndex - 1);
       return;
     }
+    final prev = _adjacentContentChapter(-1);
+    if (prev == null) {
+      _cancelPending();
+      return;
+    }
     if (_pendingDirection == -1) {
       _cancelPending();
-      if (_chapterIndex > 0) _loadChapter(_chapterIndex - 1, toLastPage: true);
+      _loadChapter(prev, toLastPage: true);
       return;
     }
     _armPending(-1);
@@ -250,6 +270,32 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _pendingDirection = direction;
     _confirmTimer?.cancel();
     _confirmTimer = Timer(_chapterConfirmDuration, () => _pendingDirection = null);
+  }
+
+  /// True if [index] renders any content. Empty spine entries (covers, blank
+  /// separators) render nothing and are skipped during navigation. Cached per book.
+  bool _chapterHasContent(int index) {
+    final book = _book;
+    if (book == null || index < 0 || index >= book.chapters.length) return false;
+    return _chapterHasContentCache.putIfAbsent(index, () {
+      final ch = book.chapters[index];
+      return buildChapterBlocks(
+              ch.rawHtml, _settings.dialogueConfig, book, ch.href)
+          .isNotEmpty;
+    });
+  }
+
+  /// The nearest chapter in [direction] (+1/-1) from the current one that has content,
+  /// skipping empties, or null if there is none.
+  int? _adjacentContentChapter(int direction) {
+    final book = _book;
+    if (book == null) return null;
+    for (var i = _chapterIndex + direction;
+        i >= 0 && i < book.chapters.length;
+        i += direction) {
+      if (_chapterHasContent(i)) return i;
+    }
+    return null;
   }
 
   // ---- menu actions ----
@@ -269,6 +315,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final updated = await SettingsScreen.show(context, _settings);
     if (updated == null) return;
     setState(() => _settings = updated);
+    widget.onSettingsChanged?.call(); // re-derive app theme (menu/status bar colors)
     await _settings.save();
     // Re-render current chapter (dialogue config / colors may have changed), re-anchoring
     // to the current reading position.
