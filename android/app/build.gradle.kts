@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.wancloud.epub_viewer"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned to 36: a transitive plugin (flutter_plugin_android_lifecycle, via file_picker)
+    // requires compileSdk >= 36, higher than the Flutter default on this toolchain.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
