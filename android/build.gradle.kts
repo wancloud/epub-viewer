@@ -22,13 +22,15 @@ subprojects {
 // Force every Android plugin subproject (file_picker, window_manager, shared_preferences,
 // flutter_plugin_android_lifecycle, ...) to compile against SDK 36. Setting compileSdk only
 // on :app isn't enough — plugin modules keep their own (older, e.g. 34) compileSdk, and
-// flutter_plugin_android_lifecycle's AAR metadata requires consumers to compile against 36,
-// so the build fails without this uniform override.
+// flutter_plugin_android_lifecycle's AAR metadata requires consumers to compile against 36.
+// Configure via pluginManager.withPlugin (fires as the Android plugin is applied) rather
+// than afterEvaluate, which throws "project already evaluated" because of the
+// evaluationDependsOn(":app") above.
 subprojects {
-    afterEvaluate {
-        val androidExt = extensions.findByName("android")
-        if (androidExt is com.android.build.gradle.BaseExtension) {
-            androidExt.compileSdkVersion(36)
+    listOf("com.android.library", "com.android.application").forEach { pluginId ->
+        pluginManager.withPlugin(pluginId) {
+            (extensions.getByName("android") as com.android.build.gradle.BaseExtension)
+                .compileSdkVersion(36)
         }
     }
 }
