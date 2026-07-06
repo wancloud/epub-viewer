@@ -35,7 +35,8 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver {
+class _ReaderScreenState extends State<ReaderScreen>
+    with WidgetsBindingObserver, WindowListener {
   late AppSettings _settings = widget.settings;
   EpubBook? _book;
   int _chapterIndex = 0;
@@ -50,6 +51,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   bool _goToLastPageAfterMeasure = false;
   int? _pendingDirection;
   Timer? _confirmTimer;
+  Timer? _saveWindowTimer;
 
   // Per-book cache of whether a chapter renders any content, so navigation can skip
   // empty spine entries (covers, blank separators). Emptiness is structural, so it stays
@@ -60,14 +62,26 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (_isDesktop) windowManager.addListener(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _restoreLastSession());
   }
 
   @override
   void dispose() {
     _confirmTimer?.cancel();
+    _saveWindowTimer?.cancel();
+    if (_isDesktop) windowManager.removeListener(this);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  // Desktop: persist the new window size right after a resize finishes, so it is
+  // remembered even if the app is closed without a lifecycle pause event firing.
+  // Debounced to coalesce the flurry of events at the end of a drag.
+  @override
+  void onWindowResized() {
+    _saveWindowTimer?.cancel();
+    _saveWindowTimer = Timer(const Duration(milliseconds: 400), _persist);
   }
 
   @override
