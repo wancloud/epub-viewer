@@ -22,27 +22,35 @@ class ReaderStatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodySmall;
     return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      // The decoration (fill + top border) spans the full bar including the area behind
+      // the Android system navigation bar; SafeArea keeps the text above that inset so the
+      // status bar never overlaps the system gesture/button bar.
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              hasBook ? chapterTitle : 'No book loaded',
-              overflow: TextOverflow.ellipsis,
-              style: style,
-            ),
+      child: SafeArea(
+        top: false,
+        child: Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hasBook ? chapterTitle : 'No book loaded',
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+              ),
+              if (hasBook) ...[
+                Text('Page ${pageIndex + 1} / $pageCount', style: style),
+                const SizedBox(width: 16),
+                Text('${percentage.toStringAsFixed(1)}%', style: style),
+              ],
+            ],
           ),
-          if (hasBook) ...[
-            Text('Page ${pageIndex + 1} / $pageCount', style: style),
-            const SizedBox(width: 16),
-            Text('${percentage.toStringAsFixed(1)}%', style: style),
-          ],
-        ],
+        ),
       ),
     );
   }
