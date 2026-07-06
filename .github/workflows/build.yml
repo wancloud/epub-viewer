@@ -5,195 +5,62 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Flutter rewrite: one codebase builds both a small Android APK and a native Windows
+# desktop app. Replaces the old PySide6/buildozer pipeline (which produced a ~674MB APK
+# and needed the NDK/SDK-license/JAXB/sdkmanager workarounds now gone from this file).
+
+env:
+  FLUTTER_VERSION: "3.44.4"
+
 jobs:
-  build-windows:
-    # Temporarily disabled while iterating on the Android build -- it already builds
-    # successfully, no need to keep re-running it on every push. Remove this line (or
-    # flip to true) once the Android job is stable.
-    if: false
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build Windows executable
-        run: >
-          pyinstaller --noconfirm --windowed --name EpubViewer
-          --add-data "epubviewer/resources;epubviewer/resources" main.py
-
-      - name: Upload Windows build artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: EpubViewer-windows
-          path: dist/EpubViewer/
-
   build-android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up JDK
-        uses: actions/setup-java@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      # python-for-android builds several native C deps from source (libffi, openssl,
-      # etc.). libffi's recipe runs autoreconf, whose configure.ac uses the libtool m4
-      # macro LT_SYS_SYMBOL_USCORE -- without the `libtool` package installed, that
-      # macro is undefined and autoreconf dies with "possibly undefined macro:
-      # LT_SYS_SYMBOL_USCORE". These are p4a's documented host build requirements.
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libtool libtool-bin autoconf automake pkg-config \
-            build-essential libltdl-dev zlib1g-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
 
-      - name: Create virtual environment
-        run: |
-          python -m venv .venv-android
-          # `source activate` normally does two things: prepend the venv's bin dir to
-          # PATH, and export VIRTUAL_ENV. Adding just the bin dir to GITHUB_PATH (as
-          # below) makes python/pip resolve into the venv, but pyside6-android-deploy's
-          # own venv check reads the VIRTUAL_ENV env var specifically -- without also
-          # exporting that via GITHUB_ENV, it still thinks it isn't in a venv and tries
-          # to prompt for confirmation, which crashes in CI (no stdin to answer it).
-          echo "$(pwd)/.venv-android/bin" >> "$GITHUB_PATH"
-          echo "VIRTUAL_ENV=$(pwd)/.venv-android" >> "$GITHUB_ENV"
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --release
 
-      - name: Install PySide6 deploy tooling
-        run: |
-          python -m pip install --upgrade pip
-          # Pinned to match the Android wheel version downloaded below -- if you bump
-          # this, bump the wheel filenames/URLs in the next step (and in
-          # pysidedeploy-android.spec's [android] section) to the same version.
-          pip install pyside6==6.11.1 buildozer cython
-          # pyside6-android-deploy needs these but doesn't install them itself; the
-          # exact list ships with PySide6 (PySide6/scripts/requirements-android.txt),
-          # so install from that file rather than hardcoding package names here.
-          pip install -r "$(python -c 'import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
+      - name: Report APK size
+        run: ls -lh build/app/outputs/flutter-apk/*.apk
 
-      # Verified: there is no auto-download for these (confirmed by reading PySide6's
-      # own deploy_lib/android/android_config.py source) -- they must be fetched
-      # manually. Qt publishes them at download.qt.io rather than PyPI (PyPI only has
-      # desktop wheels), under the plain (non "-src") entries of the pyside6/shiboken6
-      # release trees. Verified these exact URLs 200 OK before wiring them in here.
-      - name: Download Android PySide6/Shiboken wheels
-        run: |
-          mkdir -p android-wheels
-          curl -fL -o android-wheels/pyside6-android_aarch64.whl \
-            https://download.qt.io/official_releases/QtForPython/pyside6/pyside6-6.11.1-6.11.1-cp311-cp311-android_aarch64.whl
-          curl -fL -o android-wheels/shiboken6-android_aarch64.whl \
-            https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-6.11.1-6.11.1-cp311-cp311-android_aarch64.whl
-          ls -la android-wheels/
-
-      # Read PySide6's own deploy_lib/android/android_config.py source to find this:
-      # AndroidConfig.__init__ only auto-downloads/looks up ndk_path from the spec file
-      # when `existing_config_file` is False -- i.e. only for a spec freshly generated
-      # by --init, never for a pre-existing spec file like ours (`elif not
-      # existing_config_file:` guards that whole branch). Leaving [buildozer] ndk_path
-      # blank in the spec, as its own comment suggests, actually leaves self.ndk_path as
-      # None permanently for us, crashing later with "TypeError: unsupported operand
-      # type(s) for /: 'NoneType' and 'str'" when it tries to locate llvm-readobj.
-      # Fix: download the NDK version PySide6 actually needs (r27c, from
-      # android_utilities.ANDROID_NDK_VERSION) using PySide6's own downloader, and pass
-      # it explicitly via --ndk-path, which android_config.py checks *before* the buggy
-      # existing_config_file branch.
-      #
-      # Originally tried calling PySide6's own download_android_ndk() helper via
-      # `python -c "from PySide6.scripts.deploy_lib.android.android_utilities import
-      # ..."`, but that import chain hits the exact same `ModuleNotFoundError: No
-      # module named 'project_lib'` bug seen earlier on Windows (deploy_lib/__init__.py
-      # unconditionally imports nuitka_helper, which imports the internal-only
-      # project_lib) -- it failed silently in that step (error went to stderr, which the
-      # `| tail -1` capture ignored), leaving NDK_PATH empty and producing a bogus
-      # relative path in the next step. Downloading the NDK directly from Google's own
-      # well-known URL sidesteps that PySide6 import entirely.
-      - name: Download Android NDK
-        run: |
-          curl -fL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
-          unzip -q ndk.zip
-          rm ndk.zip
-          echo "NDK_PATH=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
-          ls "$(pwd)/android-ndk-r27c" | head -5
-
-      # A previous run FAILED here (buildozer's "android debug" subprocess exited
-      # non-zero because Android SDK Build-Tools 37's license wasn't accepted, so `aidl`
-      # was missing) -- but pyside6-android-deploy printed the traceback and still let
-      # the shell step exit 0, so the job showed green with no APK produced. This action
-      # installs a real SDK with licenses pre-accepted.
-      - name: Set up Android SDK (for accepted licenses)
-        uses: android-actions/setup-android@v4
-
-      # Point buildozer's own expected SDK directory (~/.buildozer/android/platform/
-      # android-sdk, confirmed from the earlier failure log) at the real installed SDK,
-      # instead of letting buildozer manage its own separate, initially-empty copy.
-      # Just seeding that directory with copied license files (an earlier attempt) got
-      # further but still failed: python-for-android's `develop` branch (which buildozer
-      # clones fresh every run) checks for the *legacy* SDK Tools layout
-      # (tools/bin/sdkmanager), which Google discontinued years ago in favor of
-      # cmdline-tools/*/bin/sdkmanager -- what setup-android actually installs. Symlink
-      # the real SDK into buildozer's expected path, then add a compatibility symlink
-      # for the legacy path p4a still looks for.
-      - name: Point buildozer at the real Android SDK
-        run: |
-          mkdir -p "$HOME/.buildozer/android/platform"
-          ln -s "$ANDROID_SDK_ROOT" "$HOME/.buildozer/android/platform/android-sdk"
-          # python-for-android invokes the legacy Android SDK Tools path
-          # tools/bin/sdkmanager. The runner image ships that legacy binary, but it
-          # depends on JAXB (javax.xml.bind), which was REMOVED from the JDK in Java 11+
-          # -- so under our JDK 17 it dies with
-          # "NoClassDefFoundError: javax/xml/bind/annotation/XmlSchema" and the build
-          # aborts before it can install platform-tools. Force-replace that legacy
-          # binary with the modern cmdline-tools sdkmanager (JDK-17 compatible, same CLI:
-          # --sdk_root + package names). Its launcher resolves symlinks to find its own
-          # lib/ dir, so a symlink at the legacy path works. `ln -sf` overwrites the
-          # existing broken binary (this is the corrected version of an earlier fix that
-          # wrongly *skipped* replacement when the legacy binary was present).
-          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager | head -1)
-          mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
-          ln -sf "$SDKMANAGER" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
-          echo "Legacy sdkmanager now points to: $(readlink -f "$ANDROID_SDK_ROOT/tools/bin/sdkmanager")"
-
-      - name: Build Android APK
-        run: pyside6-android-deploy -c pysidedeploy-android.spec --ndk-path "$NDK_PATH"
-
-      # NOTE: a post-build llvm-strip step was tried here to shrink the APK, but it only
-      # saved ~5MB -- the ~674MB is NOT unstripped debug symbols, it's the full Qt payload
-      # (pyside6-android-deploy bundles all 140 Qt libs + 5582 QML files -- WebEngine,
-      # Quick3D, Charts, etc. -- even though this app only uses Core/Gui/Widgets). Real
-      # size reduction would require pruning that payload from the PySide6 Android wheel
-      # before building, which risks producing a crash-on-launch APK only detectable by
-      # installing on a device; deliberately deferred. The strip step was removed so the
-      # APK keeps buildozer's own (cleaner) debug signing.
-
-      # pyside6-android-deploy does not reliably propagate a failing buildozer
-      # subprocess as a non-zero exit code (see above) -- verify a real APK exists
-      # rather than trusting the previous step's own exit status.
-      - name: Verify APK was produced
-        run: |
-          if ! find dist-android -name "*.apk" 2>/dev/null | grep -q .; then
-            echo "::error::pyside6-android-deploy reported success but no .apk was found under dist-android/"
-            exit 1
-          fi
-          find dist-android -name "*.apk"
-
-      - name: Upload Android build artifact
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7
         with:
           name: EpubViewer-android
-          path: dist-android/**/*.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: Zip Windows build
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath EpubViewer-windows.zip
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: EpubViewer-windows
+          path: EpubViewer-windows.zip

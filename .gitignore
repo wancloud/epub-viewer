@@ -1,10 +1,23 @@
-# Python
-__pycache__/
-*.pyc
-
-# PyInstaller build artifacts (EpubViewer.spec is kept tracked for reproducible builds)
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 build/
+*.iml
+.idea/
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+# Windows ephemeral generated files
+windows/flutter/ephemeral/
+
+# Stale PyInstaller output from the old PySide6 build (source lives in backup/pyside6/)
 dist/
 
-# Local settings (not meant to be shared/tracked)
-.claude/settings.local.json
+# Local tooling state
+.claude/
+
+# Backup PySide6 app: Python caches only (source is kept for reference)
+backup/**/__pycache__/
+backup/**/*.pyc
