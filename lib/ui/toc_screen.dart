@@ -8,19 +8,36 @@ import '../models/epub_book.dart';
 class TocScreen extends StatelessWidget {
   final List<TocEntry> toc;
   final int currentChapterIndex;
+  final double uiFontScale;
 
-  const TocScreen({super.key, required this.toc, required this.currentChapterIndex});
+  const TocScreen({
+    super.key,
+    required this.toc,
+    required this.currentChapterIndex,
+    this.uiFontScale = 1.0,
+  });
 
-  static Future<int?> show(
-      BuildContext context, List<TocEntry> toc, int currentChapterIndex) {
+  static Future<int?> show(BuildContext context, List<TocEntry> toc,
+      int currentChapterIndex, {double uiFontScale = 1.0}) {
     return showDialog<int>(
       context: context,
-      builder: (_) => TocScreen(toc: toc, currentChapterIndex: currentChapterIndex),
+      builder: (_) => TocScreen(
+          toc: toc, currentChapterIndex: currentChapterIndex, uiFontScale: uiFontScale),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // showDialog attaches to the root Navigator, above the reader's local MediaQuery
+    // override, so the UI-font-size scaling wouldn't otherwise reach this dialog —
+    // reapply it explicitly here.
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(uiFontScale)),
+      child: _buildDialog(context),
+    );
+  }
+
+  Widget _buildDialog(BuildContext context) {
     return Dialog(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),

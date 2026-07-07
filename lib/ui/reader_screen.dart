@@ -156,6 +156,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
     _book = book;
     _chapterHasContentCache.clear();
+    if (_isDesktop) {
+      windowManager.setTitle(book.title); // OS title bar (top-left) shows the book title
+    }
     final ci = chapterIndex.clamp(0, book.chapters.length - 1);
     _settings.recordBookOpened(path, book.title,
         chapterIndex: ci, charOffset: charOffset);
@@ -314,6 +317,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ---- menu actions ----
 
+  double get _uiFontScale => (_settings.uiFontSize / 9.0).clamp(0.7, 2.7);
+
   Future<void> _openChangeChapter() async {
     final book = _book;
     if (book == null) {
@@ -321,7 +326,8 @@ class _ReaderScreenState extends State<ReaderScreen>
           .showSnackBar(const SnackBar(content: Text('Open an EPUB first.')));
       return;
     }
-    final index = await TocScreen.show(context, book.toc, _chapterIndex);
+    final index = await TocScreen.show(context, book.toc, _chapterIndex,
+        uiFontScale: _uiFontScale);
     if (index != null) _loadChapter(index);
   }
 
@@ -341,13 +347,13 @@ class _ReaderScreenState extends State<ReaderScreen>
     final book = _book;
     final chapterTitle = book != null ? book.chapters[_chapterIndex].title : '';
     final percent = book != null ? overallPercentage(book, _chapterIndex, _charOffset) : 0.0;
-    final scale = (_settings.uiFontSize / 9.0).clamp(0.7, 2.7);
+    final scale = _uiFontScale;
 
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
       child: Scaffold(
         appBar: AppBar(
-          title: Text(book != null ? 'EPUB Viewer — ${book.title}' : 'EPUB Viewer',
+          title: Text(book != null ? book.title : 'EPUB Viewer',
               overflow: TextOverflow.ellipsis),
           actions: [
             IconButton(
